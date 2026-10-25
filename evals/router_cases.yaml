@@ -1,0 +1,28 @@
+cases:
+  - input: '用开放性问题方法论帮我拆解：要不要接受这份海外 offer'
+    should_activate: true
+    why: '显式点名方法名'
+
+  - input: '按 open-problem 的方式拆一下这个决定'
+    should_activate: true
+    why: '显式点名 open-problem'
+
+  - input: '先别直接给答案，先拆解再回答：我要不要换个城市生活'
+    should_activate: true
+    why: '明确要求先拆解再回答'
+
+  - input: 'TCP 三次握手为什么不是两次？'
+    should_activate: false
+    why: '技术问答，直接回答'
+
+  - input: '我的 Python 脚本报 ModuleNotFoundError: No module named yaml，怎么修？'
+    should_activate: false
+    why: '调试，直接定位错误'
+
+  - input: '新项目该选 Postgres 还是 MongoDB？'
+    should_activate: false
+    why: '技术选型，直接给判断依据'
+
+  - input: '推荐几本适合入门的分布式系统书'
+    should_activate: false
+    why: '推荐类请求，直接给清单'

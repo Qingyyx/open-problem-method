@@ -1,0 +1,7 @@
+{
+  "SKILL.md": {"lines": 140, "chars": 12000},
+  "AGENTS.md": {"lines": 90, "chars": 7000},
+  "references/*.md": {"lines": 160, "chars": 14000},
+  "docs/*.md": {"lines": 320, "chars": 22000},
+  "docs/decisions/*.md": {"lines": 220, "chars": 14000}
+}
