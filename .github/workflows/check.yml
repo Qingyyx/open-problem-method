@@ -13,13 +13,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # 仓库名可以与 skill 名不同；按安装目录名 checkout，保证 frontmatter 的 name == 目录名 成立。
+          path: open-problem-method
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - name: Install PyYAML
+        working-directory: open-problem-method
         run: python3 -m pip install pyyaml
       - name: Run structural gates
+        working-directory: open-problem-method
         run: python3 scripts/check.py --all
       - name: Test the gates themselves
+        working-directory: open-problem-method
         run: python3 scripts/test_gates.py
       # 行为 eval 需要模型额度，是发布前本地门禁 make eval，不进默认 CI。
