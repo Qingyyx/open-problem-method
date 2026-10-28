@@ -102,3 +102,4 @@ v3 曾覆盖三种缺口、实例化、不可逆决策、停止条件与过程�
 | [0006 结构门禁与行为门禁分离](decisions/0006-structural-vs-behavioral-gates.md) | 结构每次提交，行为发布前，语义人工评审 |
 | [0007 过程文档作为输出载体](decisions/0007-process-document-output.md) | 输出改为 7 节过程文档，台账是第 3 节 |
 | [0008 推理门禁](decisions/0008-reasoning-gate.md) | 结论出口增加关系式、比率基准、反证观测、断言强度四项检查 |
+| [0009 评测用例只在本机](decisions/0009-local-manual-evals.md) | 用例含真实客户信息，移出版本库与 CI，只由人工运行 |
