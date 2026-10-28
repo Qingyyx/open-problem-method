@@ -58,6 +58,12 @@ v2 的台账解决了"有没有执行"，没有解决"过程是否可复查"：�
 
 只给最终结论、把多步合并成一段、或省略执行记录，都算未完成。理由与被否决的方案见 [0007](decisions/0007-process-document-output.md)。
 
+## v3.1：推理门禁
+
+v3 的门禁全部挂在外部证据上：取到数值、条款、编号就算闭合。它没有约束从证据到因果的那一步。一次小样本失效：10 个客户、转介绍到店 1–2 人未成交，被判定为"口碑结构性关闭"；实际 1–2 ÷ 10 ＝ 10%–20%，与行业老带新率持平，失效的是转化率与基数，不是口碑。
+
+v3.1 在 §2 增加推理门禁：关系式、比率基准、反证观测、断言强度；结论分为观测级、推断级、叙事级，只有前两级可以写「已闭合」。细节在 [references/reasoning-gate.md](../references/reasoning-gate.md)，取舍见 [0008](decisions/0008-reasoning-gate.md)。
+
 ## 与 v1 的差异
 
 | 维度 | v1 | v2 |
@@ -106,3 +112,4 @@ v2 的台账解决了"有没有执行"，没有解决"过程是否可复查"：�
 | [0005 description 绑定显式调用](decisions/0005-description-binds-explicit-invocation.md) | 触发绑定点名方法或明确要求拆解 |
 | [0006 结构门禁与行为门禁分离](decisions/0006-structural-vs-behavioral-gates.md) | 结构每次提交，行为发布前，语义人工评审 |
 | [0007 过程文档作为输出载体](decisions/0007-process-document-output.md) | 输出改为 7 节过程文档，台账是第 3 节 |
+| [0008 推理门禁](decisions/0008-reasoning-gate.md) | 结论出口增加关系式、比率基准、反证观测、断言强度四项检查 |
