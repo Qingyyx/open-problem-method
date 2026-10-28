@@ -6,13 +6,13 @@
 
 | 层 | 何时跑 | 覆盖什么 | 入口 |
 |---|---|---|---|
-| 结构 | 每次提交 | 10 个 gate：文件形态、链接、术语、用例可解析 | `make check`、pre-commit、CI |
-| 行为 | 发布前 | [evals/cases.yaml](../evals/cases.yaml) 的 8 条用例 | `make eval` |
+| 结构 | 每次提交 | 9 个 gate：文件形态、链接、术语、语料 | `make check`、pre-commit、CI |
+| 行为 | 发布前，仅人工 | 本机 `evals/cases.yaml` 的人工用例；历史存档 `evals/reference/`，运行记录 `evals/runs/`；均含真实客户信息，已 gitignore | `make eval` |
 | 人工 | 发布前 | 语义质量、评测差异解释、触发判断 | 评审清单，见 [authoring.md](authoring.md) |
 
-结构层必须快：`make check` 在 1 秒内跑完，所以能挂在每次提交。行为层每条用例一次模型调用，只在发布前跑。人工评审不替代前两层，前两层也不替代人工评审。
+结构层必须快：`make check` 在 1 秒内跑完，所以能挂在每次提交。行为层每条用例一次模型调用，只在发布前由人工跑。行为用例不进版本库，结构层不检查它；它的 YAML 合法性由 `run_evals.py --plan` 在人工运行时校验。人工评审不替代前两层，前两层也不替代人工评审。
 
-## 十个 gate
+## 九个 gate
 
 所有 gate 独立执行，收集全部失败后统一输出，不 fail-fast。失败格式：
 
@@ -31,7 +31,6 @@ FAIL <id>: <文件:行号与原因>
 | `decisions` | 文件名 `NNNN-kebab.md`；编号从 0001 连续唯一；首行 `# <编号> <标题>`；前 6 行含 `- 状态：已接受`；含 `## 问题` `## 决策` `## 备选方案` `## 后果`；备选 ≥2 条 | `python3 scripts/check.py --only decisions`，按 FAIL 补齐结构或改编号 |
 | `version` | `VERSION` 匹配 `^\d+\.\d+\.\d+$`；`CHANGELOG.md` 含 `## [<version>]`；`metadata.version` 一致 | `python3 scripts/check.py --only version`，三处对齐后重跑 |
 | `glossary` | `docs/glossary.md` 含表头 `\| 术语 \| 定义 \| 不要写成 \|`；14 个规范术语都在表中，且至少出现在 `SKILL.md` 或 `references/` 之一；运行时文件不含禁用词 | `python3 scripts/check.py --only glossary`；缺术语补表，禁用词改规范词 |
-| `evals` | `cases.yaml` 顶层 `cases:` 7-20 条；每条含 6 个必需字段，可选 `artifact_glob`；id 唯一；`must_match` 非空；正则全部可编译；`router_cases.yaml` 正负各 ≥3 且字段齐全 | `python3 scripts/check.py --only evals`；正则错误按 FAIL 给的行号修 |
 | `corpus` | 参与扫描的 Markdown ≥8；`SKILL.md`、`AGENTS.md`、`docs/design.md`、`docs/authoring.md`、`docs/releasing.md`、`docs/verification.md`、`docs/glossary.md` 都存在 | `python3 scripts/check.py --only corpus`，补缺失文件；文件数不足时检查是否误删 |
 
 ### 语料守卫
@@ -40,13 +39,13 @@ FAIL <id>: <文件:行号与原因>
 
 ### 门禁自身的测试
 
-门禁保护的是一个提示词文件，静默通过的 gate 比没有 gate 更危险。`python3 scripts/test_gates.py` 复制仓库，逐个破坏 10 条规则，断言对应 gate 退出非零且输出 `FAIL <id>`。
+门禁保护的是一个提示词文件，静默通过的 gate 比没有 gate 更危险。`python3 scripts/test_gates.py` 复制仓库，逐个破坏 9 条规则，断言对应 gate 退出非零且输出 `FAIL <id>`。
 
 | 项 | 内容 |
 |---|---|
-| 覆盖 | 10 个 gate 各一条破坏：改名、删标题、超预算、断链、重命名参考文件、删 ADR 备选、改版本、删术语、坏正则、删必需文件 |
+| 覆盖 | 9 个 gate 各一条破坏：改名、删标题、超预算、断链、重命名参考文件、删 ADR 备选、改版本、删术语、删必需文件 |
 | 入口 | `make test-gates`；`make ci` 等于 `make check` 加它 |
-| 不放进 pre-commit | 每次复制仓库并跑 11 次 gate，耗时高于单次 check；CI 与门禁改动时跑即可 |
+| 不放进 pre-commit | 每次复制仓库并跑 10 次 gate，耗时高于单次 check；CI 与门禁改动时跑即可 |
 
 它只证明 gate 会失败，不证明 gate 的判据正确。判据的正确性由 [authoring.md](authoring.md) 的影响矩阵与人工评审保证。
 
@@ -82,11 +81,12 @@ python3 scripts/check.py --all
 
 | 项 | 为什么机器判不了 | 谁来做 |
 |---|---|---|
+| 行为用例的判定 | 用例含真实客户信息，不能入库；人工清单依赖语境，正则只能覆盖可 grep 的观察量 | 人工运行 `make eval`，逐条读输出；原始输出/思维链写入 `evals/runs/` |
 | 语义质量 | `must_match` 能证明某个词出现，不能证明台账真的可判定、下一步真的可执行 | 人工逐条读输出，对照 `SKILL.md` 的门禁 |
 | 评测差异的解释 | 未命中可能是模型波动、提示词退步、或用例过严；机器只报哪条正则没命中 | 人工看原始输出后决定改提示词还是改用例 |
 | 触发判断 | 真实用户措辞无穷，`router_cases.yaml` 只是样本；"该不该激活"本身是语义判断 | 人工抽样真实调用记录，检查漏触发与误触发 |
 
-机器门禁通过只代表形态正确。把上面三项也写成 gate，会让门禁依赖主观打分，最终变成"看起来通过"。
+机器门禁通过只代表形态正确。把上面几项也写成 gate，会让门禁依赖主观打分，最终变成"看起来通过"。
 
 ## CI
 
@@ -100,7 +100,7 @@ python3 scripts/check.py --all
 | 命令 | `python3 scripts/check.py --all` 与 `python3 scripts/test_gates.py` |
 | 矩阵 | 无 |
 
-`make eval` 不在默认 CI 里。它需要 opencode CLI 与模型额度，凭据不进 CI；行为评测是发布前本地门禁，由 [releasing.md](releasing.md) 的发布序列保证执行。CI 只回答一个问题：这次提交的结构是否仍然成立。
+`make eval` 不在默认 CI 里。它需要 opencode CLI 与模型额度，凭据不进 CI；行为用例、历史存档与运行记录都不在仓库的检出范围里。评测是发布前的本机人工步骤，由 [releasing.md](releasing.md) 的发布序列保证执行。CI 只回答一个问题：这次提交的结构是否仍然成立。
 
 ## 失败时的定位顺序
 
@@ -110,4 +110,4 @@ python3 scripts/check.py --all
 | 2 | 读 FAIL 行的"修复"提示 | 多数失败是路径、字段、编号这类机械问题 |
 | 3 | `git diff` 对照 [authoring.md](authoring.md) 的影响矩阵 | 确认是否漏改了连锁文件 |
 | 4 | `make check` 全量重跑 | 单 gate 通过不代表其它 gate 不受同一改动影响 |
-| 5 | 行为用例失败时 `python3 scripts/run_evals.py --run --only <id>` | 拿到完整输出，区分模型波动与真实退步 |
+| 5 | 人工用例不满足时 `python3 scripts/run_evals.py --run --only <id>` | 拿到完整输出，按 `review` 清单逐条判断 |

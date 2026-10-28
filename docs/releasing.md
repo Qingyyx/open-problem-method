@@ -31,14 +31,14 @@
 | 步 | 命令或动作 | 通过标准 |
 |---|---|---|
 | 1 | 编辑 `VERSION`、`CHANGELOG.md`、`SKILL.md` 的 `metadata.version` | 三者一致 |
-| 2 | `make check` | `OK 10 gates, N files` |
-| 3 | `make eval` | 全部用例 PASS，失败项为 0；`router_cases.yaml` 无新增误触发 |
+| 2 | `make check` | `OK 9 gates, N files` |
+| 3 | 人工运行 `make eval` | 人工用例的 `review` 清单逐条勾选；自动用例失败项为 0；本机 `router_cases.yaml` 无新增误触发 |
 | 4 | `git tag v<version>` 并 `git push origin v<version>` | tag 指向第 3 步通过的提交 |
 | 5 | `make release` | 产出 `dist/open-problem-method-v<version>.zip`，包内含 `manifest.json` |
 | 6 | 发布 zip；需要单独附 manifest 时从包内取出 | 附件与本地 `sha256sum` 一致 |
 | 7 | 安装 smoke | 解压后 frontmatter 的 `name`、`description`、`version` 正确 |
 
-第 4 步在第 3 步之后：tag 一旦推送就代表"这个提交通过行为评测"，顺序反了就要撤 tag。
+第 4 步在第 3 步之后：tag 一旦推送就代表"这个提交通过人工评测"，顺序反了就要撤 tag。评测用例只在本机，不随提交推送。
 
 第 7 步的 smoke 在发布物上做，不在工作树上做。工作树通过不代表 zip 完整。
 
@@ -66,7 +66,7 @@ zip 只含五类条目：
 | `CHANGELOG.md` | 变更记录，安装者可读 |
 | `manifest.json` | 每个文件的 sha256 |
 
-不打包 `docs/`、`scripts/`、`evals/`、`.github/`、`.githooks/`、`dist/`。维护文档与评测是仓库资产，不是安装物；把它们打进包会让使用者误以为需要运行门禁。
+不打包 `docs/`、`scripts/`、`evals/`、`.github/`、`.githooks/`、`dist/`。维护文档与评测是仓库资产，不是安装物；把它们打进包会让使用者误以为需要运行门禁。本机 `evals/` 含真实客户信息，同样不进入发布包。
 
 发布后核对：
 
@@ -89,7 +89,7 @@ sha256sum dist/open-problem-method-v<version>.zip
 
 Migration 只写读者动作。理由写 ADR，链接放在条目末尾；不复述决策过程。
 
-破坏性变更必须在同一次提交里完成：`SKILL.md` 改动、ADR、Migration 段、相关 eval 用例。分成两次提交会让中间状态既不可测也不可发布。
+破坏性变更必须在同一次提交里完成：`SKILL.md` 改动、ADR、Migration 段，以及本机手工用例的验证记录。用例本身不入库；分成两次提交会让中间状态既不可测也不可发布。
 
 ## 回滚
 
@@ -106,8 +106,8 @@ Migration 只写读者动作。理由写 ADR，链接放在条目末尾；不复
 
 - [ ] `VERSION`、`CHANGELOG.md`、`metadata.version` 三者一致。
 - [ ] `CHANGELOG.md` 有 Added / Changed / Removed / Migration 四节，空节写"无"。
-- [ ] `make check` 输出 `OK 10 gates`。
-- [ ] `make eval` 全部 PASS，连跑三次无偶发失败。
+- [ ] `make check` 输出 `OK 9 gates`。
+- [ ] 人工运行 `make eval`，人工清单逐条勾选，自动用例无退步。
 - [ ] 破坏性变更的 Migration 点名了文件与字段。
 - [ ] zip 清单只有五类条目。
 - [ ] `manifest.json` 的哈希与包内文件一致。

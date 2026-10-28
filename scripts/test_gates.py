@@ -76,11 +76,6 @@ MUTATIONS: dict[str, Callable[[Path], object]] = {
         "| 止损线 |",
         "| 止损阈值 |",
     ),
-    "evals": lambda root: replace(
-        root / "evals/cases.yaml",
-        "'(GB\\s*55038|GB\\s*55016|GB\\s*50118)'",
-        "'(GB\\s*55038|GB\\s*55016|GB\\s*50118)['",
-    ),
     "corpus": lambda root: (root / "AGENTS.md").unlink(),
 }
 

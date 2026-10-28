@@ -17,7 +17,7 @@ eval-plan:
 	$(PYTHON) scripts/run_evals.py --plan
 
 eval:
-	$(PYTHON) scripts/run_evals.py --run
+	$(PYTHON) scripts/run_evals.py --run --capture
 
 release: check
 	$(PYTHON) scripts/release.py --all

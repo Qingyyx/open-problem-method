@@ -9,17 +9,28 @@
 - 推理门禁：`SKILL.md` §2 新增四项检查（关系式、比率基准、反证观测、断言强度）。外部证据过门禁不再等于结论成立。
 - 结论强度三级：观测级、推断级、叙事级；只有前两级可以写「已闭合」，叙事级必须写「未判」。
 - 术语「推理门禁」「反证观测」「叙事级」，以及 `references/reasoning-gate.md`（校准案例、四项判据、失败签名、输入矛盾扫描）。
+- 本机手工用例 case-01（小样本获客场景）：用 `bg` 承载原始背景、`input` 承载补充条件，按 `review` 清单人工审查。
+- 本机会话存档 `evals/reference/case-01/`：原始 JSON、全文、正文、思维链与检索记录，按最高还原度保存。
+- 人工评测记录：`make eval` 自动把原始输出、stderr、命令与元数据写入 `evals/runs/`。
 - ADR 0008：记录推理门禁的取舍，含「不建监控层」的否决理由。
 
 ### Changed
 
 - 状态列「已闭合」的语义收紧：除外部证据门禁外，还须通过推理门禁。
+- 评测用例改由本机维护：`make check` 的结构门禁从 10 个降为 9 个；`make eval` 只由人工运行，AI 与 CI 不触发。
+- `run_evals.py` 新增 `reference` 字段与 `--capture`；`make eval` 默认加 `--thinking` 并把原始输出写入 `evals/runs/`。
+
+### Removed
+
+- 仓库内的 `evals/cases.yaml` 与 `evals/router_cases.yaml`。两者含真实客户信息，已加入 `.gitignore`，不再随仓库分发。
+- `evals` 结构 gate；用例 YAML 改由 `run_evals.py --plan` 在人工运行时校验。
 
 ### Migration
 
 - **读台账的调用方**：列不变，仍是缺口陈述、类型、已过门禁、代价、状态；变化在状态列的含义——叙事级结论现在必须显示「未判」，不再出现「已闭合」。
 - **写回答的调用方**：任何因果结论在标「已闭合」前要写出量的关系与一条反证观测；只给证据、不给关系式的结论按未闭合处理。
 - **输出契约不变**：仍是 7 节过程文档，节名与顺序不动。
+- **评测维护者**：旧版的 `evals/cases.yaml` 与 `router_cases.yaml` 不再随仓库提供。升级后按 [evals/README.md](evals/README.md) 的字段在本机重建用例，保留旧文件时不要提交。`make check` 不再检查用例 YAML；用 `python3 scripts/run_evals.py --plan` 校验，人工运行 `make eval`，AI 与 CI 不触发。历史会话可按 `evals/reference/<id>/` 的结构本机存档；`make eval` 会写 `evals/runs/`，两者都不入库。
 
 ## [3.0.0] - 2026-10-25
 

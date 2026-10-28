@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -19,7 +20,7 @@ from check import (
     yaml_section_lines,
 )
 
-PROMPT_PREFIX = "读取当前目录的 SKILL.md 并严格按其执行。用户请求："
+PROMPT_PREFIX = "读取当前目录的 SKILL.md 并严格按其执行。"
 TIMEOUT_SECONDS = 600
 
 
@@ -35,20 +36,36 @@ def load_cases(root: Path) -> tuple[list[dict], list[str]]:
     return data["cases"], []
 
 
-def build_command(case: dict, directory: str, model: str | None) -> list[str]:
-    prompt = PROMPT_PREFIX + case["input"]
+def is_manual(case: dict) -> bool:
+    return not case.get("must_match") and not case.get("must_not_match")
+
+
+def build_prompt(case: dict) -> str:
+    parts = []
+    background = case.get("bg")
+    if isinstance(background, str) and background.strip():
+        parts.append("背景：\n" + background.strip())
+    parts.append("用户请求：\n" + case["input"].strip())
+    return PROMPT_PREFIX + "\n\n" + "\n\n".join(parts)
+
+
+def build_command(
+    case: dict, directory: str, model: str | None, thinking: bool = False
+) -> list[str]:
     command = ["opencode", "run", "--dir", directory]
     if model:
         command += ["-m", model]
-    command.append(prompt)
+    if thinking:
+        command.append("--thinking")
+    command.append(build_prompt(case))
     return command
 
 
 def compile_patterns(case: dict) -> tuple[list[re.Pattern], list[re.Pattern]]:
     flags = re.UNICODE | re.MULTILINE
     return (
-        [re.compile(pattern, flags) for pattern in case["must_match"]],
-        [re.compile(pattern, flags) for pattern in case["must_not_match"]],
+        [re.compile(pattern, flags) for pattern in case.get("must_match") or []],
+        [re.compile(pattern, flags) for pattern in case.get("must_not_match") or []],
     )
 
 
@@ -59,7 +76,11 @@ def plan(cases: list[dict], model: str | None, as_json: bool) -> int:
         rows.append(
             {
                 "id": case["id"],
+                "bg": case.get("bg"),
                 "input": case["input"],
+                "review": case.get("review") or [],
+                "reference": case.get("reference") or {},
+                "manual": is_manual(case),
                 "command": command,
                 "display": shlex.join(command),
             }
@@ -68,7 +89,15 @@ def plan(cases: list[dict], model: str | None, as_json: bool) -> int:
         print(json.dumps({"model": model, "cases": rows}, ensure_ascii=False, indent=2))
         return 0
     for row in rows:
-        print(f"{row['id']}: {row['display']}")
+        mode = "人工审查" if row["manual"] else "正则判定"
+        print(f"{row['id']}（{mode}）: {row['display']}")
+        if row["reference"]:
+            print("  参考（本机，gitignore）:")
+            for key, value in row["reference"].items():
+                print(f"    {key}: {value}")
+        if row["manual"]:
+            for item in row["review"]:
+                print(f"  - {item}")
     print(f"\n共 {len(rows)} 条；--plan 不调用模型。")
     return 0
 
@@ -81,6 +110,37 @@ def prepare_workspace(root: Path) -> tempfile.TemporaryDirectory:
     if references.is_dir():
         shutil.copytree(references, target / "references")
     return tmp
+
+
+def save_capture(
+    root: Path,
+    case: dict,
+    command: list[str],
+    stdout: str,
+    stderr: str,
+    returncode: int,
+    model: str | None,
+) -> str:
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    run_dir = root / "evals/runs" / f"{stamp}-{case['id']}"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "stdout.txt").write_text(stdout, encoding="utf-8")
+    (run_dir / "stderr.txt").write_text(stderr, encoding="utf-8")
+    (run_dir / "command.txt").write_text(shlex.join(command), encoding="utf-8")
+    (run_dir / "prompt.txt").write_text(build_prompt(case), encoding="utf-8")
+    meta = {
+        "case": case["id"],
+        "model": model,
+        "returncode": returncode,
+        "captured_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "reference": case.get("reference") or {},
+        "stdout_chars": len(stdout),
+        "stderr_chars": len(stderr),
+    }
+    (run_dir / "meta.json").write_text(
+        json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    return run_dir.relative_to(root).as_posix()
 
 
 def collect_artifacts(directory: Path, pattern: str) -> tuple[list[Path], str | None]:
@@ -99,10 +159,15 @@ def failure(
     returncode: int = 1,
     stdout: str = "",
     stderr: str = "",
+    run_dir: str | None = None,
 ) -> dict:
     return {
         "id": case["id"],
         "passed": False,
+        "manual": is_manual(case),
+        "review": case.get("review") or [],
+        "reference": case.get("reference") or {},
+        "run_dir": run_dir,
         "returncode": returncode,
         "missing": [pattern.pattern for pattern in must],
         "unexpected": [],
@@ -113,11 +178,12 @@ def failure(
     }
 
 
-def execute(case: dict, root: Path, model: str | None) -> dict:
+def execute(case: dict, root: Path, model: str | None, capture: bool = False) -> dict:
     tmp = prepare_workspace(root)
     must, must_not = compile_patterns(case)
+    manual = is_manual(case)
     try:
-        command = build_command(case, tmp.name, model)
+        command = build_command(case, tmp.name, model, thinking=capture and manual)
         try:
             process = subprocess.run(
                 command,
@@ -128,12 +194,36 @@ def execute(case: dict, root: Path, model: str | None) -> dict:
                 check=False,
                 timeout=TIMEOUT_SECONDS,
             )
-        except subprocess.TimeoutExpired:
+        except subprocess.TimeoutExpired as exc:
+            stdout = exc.stdout or ""
+            stderr = exc.stderr or ""
+            if isinstance(stdout, bytes):
+                stdout = stdout.decode("utf-8", errors="replace")
+            if isinstance(stderr, bytes):
+                stderr = stderr.decode("utf-8", errors="replace")
+            run_dir = (
+                save_capture(root, case, command, stdout, stderr, 124, model)
+                if capture
+                else None
+            )
             return failure(
-                case, must, f"opencode 超时（>{TIMEOUT_SECONDS}s）", returncode=124
+                case,
+                must,
+                f"opencode 超时（>{TIMEOUT_SECONDS}s）",
+                returncode=124,
+                stdout=stdout,
+                stderr=stderr,
+                run_dir=run_dir,
             )
         stdout = process.stdout or ""
         stderr = process.stderr or ""
+        run_dir = (
+            save_capture(
+                root, case, command, stdout, stderr, process.returncode, model
+            )
+            if capture
+            else None
+        )
         if process.returncode != 0:
             return failure(
                 case,
@@ -142,6 +232,7 @@ def execute(case: dict, root: Path, model: str | None) -> dict:
                 returncode=process.returncode,
                 stdout=stdout,
                 stderr=stderr,
+                run_dir=run_dir,
             )
 
         content = stdout
@@ -176,12 +267,16 @@ def execute(case: dict, root: Path, model: str | None) -> dict:
         return {
             "id": case["id"],
             "passed": not missing and not unexpected,
+            "manual": manual,
+            "review": case.get("review") or [],
+            "reference": case.get("reference") or {},
+            "run_dir": run_dir,
             "returncode": process.returncode,
             "missing": missing,
             "unexpected": unexpected,
             "error": None,
             "stderr": "",
-            "stdout": stdout[-2000:],
+            "stdout": stdout if manual else stdout[-2000:],
             "artifact": artifact,
         }
     finally:
@@ -189,11 +284,37 @@ def execute(case: dict, root: Path, model: str | None) -> dict:
 
 
 def print_result(result: dict) -> None:
+    if result.get("manual"):
+        print(f"MANUAL {result['id']}（人工审查）")
+        if result.get("error"):
+            print(f"  运行失败: {result['error']}")
+        for item in result.get("review") or []:
+            print(f"  - {item}")
+        if result.get("reference"):
+            print("  历史参考（本机）:")
+            for key, value in result["reference"].items():
+                print(f"    {key}: {value}")
+        if result.get("run_dir"):
+            print(f"  本次记录: {result['run_dir']}")
+        if result.get("artifact"):
+            print(f"  产物: {result['artifact']}")
+        output = result.get("stdout") or ""
+        if output:
+            print("  输出:")
+            print("    " + output.replace("\n", "\n    "))
+        if result.get("stderr"):
+            print("  stderr:")
+            print("    " + result["stderr"].replace("\n", "\n    "))
+        return
     if result["passed"]:
         suffix = f" -> {result['artifact']}" if result.get("artifact") else ""
         print(f"PASS {result['id']}{suffix}")
+        if result.get("run_dir"):
+            print(f"  记录: {result['run_dir']}")
         return
     print(f"FAIL {result['id']}")
+    if result.get("run_dir"):
+        print(f"  记录: {result['run_dir']}")
     if result.get("error"):
         print(f"  错误: {result['error']}")
     if result["missing"]:
@@ -221,6 +342,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--model", metavar="PROVIDER/MODEL", help="传给 opencode 的 -m")
     parser.add_argument("--json", action="store_true", help="输出 JSON")
     parser.add_argument(
+        "--capture",
+        action="store_true",
+        help="把本次原始输出（含 --thinking）写入 evals/runs/<时间>-<id>/",
+    )
+    parser.add_argument(
         "--root",
         metavar="PATH",
         default=str(Path(__file__).resolve().parent.parent),
@@ -238,7 +364,7 @@ def main(argv: list[str] | None = None) -> int:
         for message in errors:
             print(f"FAIL evals: {message}", file=sys.stderr)
         print(
-            "  修复: 按上面的行号修正 evals/cases.yaml；然后运行 "
+            "  修复: 本机维护 evals/cases.yaml（已 gitignore）；按上面的行号修正后运行 "
             "python3 scripts/run_evals.py --plan",
             file=sys.stderr,
         )
@@ -266,7 +392,7 @@ def main(argv: list[str] | None = None) -> int:
     for index, case in enumerate(cases, 1):
         if not args.json:
             print(f"RUN {index}/{len(cases)} {case['id']}", flush=True)
-        result = execute(case, root, args.model)
+        result = execute(case, root, args.model, capture=args.capture)
         results.append(result)
         if not args.json:
             print_result(result)
@@ -274,9 +400,21 @@ def main(argv: list[str] | None = None) -> int:
     if args.json:
         print(json.dumps({"model": args.model, "results": results}, ensure_ascii=False, indent=2))
     else:
-        passed = sum(1 for result in results if result["passed"])
-        print(f"\n{passed}/{len(results)} PASS")
-    return 0 if all(result["passed"] for result in results) else 1
+        automatic = [result for result in results if not result.get("manual")]
+        manual = [result for result in results if result.get("manual")]
+        if automatic:
+            passed = sum(1 for result in automatic if result["passed"])
+            print(f"\n{passed}/{len(automatic)} PASS（自动用例）")
+        if manual:
+            print(f"{len(manual)} 条人工用例已运行，请按审查清单逐条判断。")
+        if args.capture:
+            print("本次原始输出已写入 evals/runs/（gitignore）。")
+    failed = any(
+        (not result.get("manual") and not result["passed"])
+        or (result.get("manual") and result.get("error"))
+        for result in results
+    )
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":

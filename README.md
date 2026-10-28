@@ -59,7 +59,7 @@ cp -r SKILL.md references VERSION CHANGELOG.md ~/.agents/skills/open-problem-met
 | `SKILL.md` | 运行时入口；改行为先改这里 |
 | `references/` | 按需加载的判据与反例 |
 | `docs/` | 设计理由、产出流程、发布、门禁、术语、ADR |
-| `evals/` | 行为用例与触发用例 |
+| `evals/` | 本机手工用例与触发样本；含真实客户信息，已 gitignore，不入库 |
 | `scripts/` | 结构门禁、评测运行器、发布脚本 |
 
 ## 维护
@@ -67,9 +67,11 @@ cp -r SKILL.md references VERSION CHANGELOG.md ~/.agents/skills/open-problem-met
 ```sh
 make check        # 结构门禁，提交前必须通过
 make test-gates   # 破坏每条规则，确认门禁会失败
-make eval         # 行为评测，需要 opencode CLI 与模型额度
+make eval         # 本机手工评测，仅人工运行；保存输出/思维链到 evals/runs/
 make release      # 校验版本、打包、安装 smoke
 ```
+
+`evals/cases.yaml`、`evals/router_cases.yaml`、历史存档 `evals/reference/` 与运行记录 `evals/runs/` 含真实客户信息，只在本机维护，已被 `.gitignore` 排除；`make eval` 只由人工运行，AI 与 CI 都不触发。
 
 产出流程见 [docs/authoring.md](docs/authoring.md)，门禁清单见 [docs/verification.md](docs/verification.md)，发布步骤见 [docs/releasing.md](docs/releasing.md)。
 

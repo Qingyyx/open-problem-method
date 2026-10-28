@@ -5,3 +5,9 @@ __pycache__/
 .cortexkit/
 
 .sisyphus/
+
+# 行为用例、历史输出与运行记录含真实客户信息，只在本机维护，不进入版本库
+evals/cases.yaml
+evals/router_cases.yaml
+evals/reference/
+evals/runs/

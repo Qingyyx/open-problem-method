@@ -17,6 +17,10 @@ except ImportError:
 
 
 EXCLUDED_DIR_NAMES = {"node_modules", "dist", "__pycache__", ".venv", "venv", ".git"}
+LOCAL_EVAL_DIRS = {
+    ("evals", "reference"),
+    ("evals", "runs"),
+}
 REQUIRED_CORPUS_FILES = (
     "SKILL.md",
     "AGENTS.md",
@@ -101,6 +105,8 @@ class Repo:
     def _is_excluded(rel: str) -> bool:
         parts = rel.split("/")
         if parts[:2] == ["docs", "archive"]:
+            return True
+        if tuple(parts[:2]) in LOCAL_EVAL_DIRS:
             return True
         for part in parts[:-1]:
             if part in EXCLUDED_DIR_NAMES:
@@ -369,10 +375,10 @@ def validate_cases_data(
     cases = data.get("cases")
     if not isinstance(cases, list):
         return [(1, "顶层必须含 cases 列表")]
-    if not 7 <= len(cases) <= 20:
-        issues.append((1, f"cases 数量 {len(cases)} 不在 7–20 条"))
+    if not 1 <= len(cases) <= 20:
+        issues.append((1, f"cases 数量 {len(cases)} 不在 1–20 条"))
 
-    required = ("id", "input", "expect", "must_match", "must_not_match", "why")
+    required = ("id", "input", "expect", "why")
     seen: set[str] = set()
     for index, case in enumerate(cases):
         line = case_lines[index] if index < len(case_lines) else 1
@@ -393,20 +399,59 @@ def validate_cases_data(
             value = case.get(key)
             if not isinstance(value, str) or not value.strip():
                 issues.append((line, f"第 {index + 1} 条 case 的 {key} 必须是非空字符串"))
+        background = case.get("bg")
+        if background is not None and (
+            not isinstance(background, str) or not background.strip()
+        ):
+            issues.append((line, f"第 {index + 1} 条 case 的 bg 必须是非空字符串"))
+        review = case.get("review")
+        if review is not None:
+            if not isinstance(review, list) or not all(
+                isinstance(item, str) and item.strip() for item in review
+            ):
+                issues.append(
+                    (line, f"第 {index + 1} 条 case 的 review 必须是非空字符串列表")
+                )
+        reference = case.get("reference")
+        if reference is not None:
+            if not isinstance(reference, dict) or not reference:
+                issues.append(
+                    (line, f"第 {index + 1} 条 case 的 reference 必须是非空映射")
+                )
+            else:
+                for key, value in reference.items():
+                    if not isinstance(key, str) or not key.strip():
+                        issues.append(
+                            (line, f"第 {index + 1} 条 case 的 reference 键必须是非空字符串")
+                        )
+                    if not isinstance(value, str) or not value.strip():
+                        issues.append(
+                            (line, f"第 {index + 1} 条 case 的 reference[{key}] 必须是非空字符串")
+                        )
+                    elif value.startswith("/") or ".." in value.split("/"):
+                        issues.append(
+                            (line, f"第 {index + 1} 条 case 的 reference[{key}] 必须是相对路径")
+                        )
         for key in ("must_match", "must_not_match"):
-            patterns = case.get(key)
+            patterns = case.get(key, [])
             if not isinstance(patterns, list) or not all(
                 isinstance(p, str) for p in patterns
             ):
                 issues.append((line, f"第 {index + 1} 条 case 的 {key} 必须是字符串列表"))
                 continue
-            if key == "must_match" and not patterns:
-                issues.append((line, f"第 {index + 1} 条 case 的 must_match 不能为空"))
             for pattern in patterns:
                 try:
                     re.compile(pattern, re.UNICODE)
                 except re.error as exc:
                     issues.append((line, f"正则无法编译 {pattern!r}: {exc}"))
+        if (
+            not case.get("must_match")
+            and not case.get("must_not_match")
+            and not review
+        ):
+            issues.append(
+                (line, f"第 {index + 1} 条 case 至少要有 must_match 或 review")
+            )
         artifact_glob = case.get("artifact_glob")
         if artifact_glob is not None:
             if not isinstance(artifact_glob, str) or not artifact_glob.strip():
@@ -418,58 +463,6 @@ def validate_cases_data(
                     (line, f"第 {index + 1} 条 case 的 artifact_glob 必须是相对 glob")
                 )
     return issues
-
-
-def validate_router_data(
-    data: object, case_lines: list[int]
-) -> list[tuple[int, str]]:
-    issues: list[tuple[int, str]] = []
-    if not isinstance(data, dict):
-        return [(1, "顶层必须是 YAML 映射")]
-    cases = data.get("cases")
-    if not isinstance(cases, list):
-        return [(1, "顶层必须含 cases 列表")]
-    true_count = 0
-    false_count = 0
-    for index, case in enumerate(cases):
-        line = case_lines[index] if index < len(case_lines) else 1
-        if not isinstance(case, dict):
-            issues.append((line, f"第 {index + 1} 条 router case 必须是映射"))
-            continue
-        for key in ("input", "should_activate", "why"):
-            if key not in case:
-                issues.append((line, f"第 {index + 1} 条 router case 缺少字段 {key}"))
-        if not isinstance(case.get("input"), str) or not case.get("input", "").strip():
-            issues.append((line, f"第 {index + 1} 条 router case 的 input 必须是非空字符串"))
-        if not isinstance(case.get("why"), str) or not case.get("why", "").strip():
-            issues.append((line, f"第 {index + 1} 条 router case 的 why 必须是非空字符串"))
-        active = case.get("should_activate")
-        if not isinstance(active, bool):
-            issues.append((line, f"第 {index + 1} 条 router case 的 should_activate 必须是布尔值"))
-        elif active:
-            true_count += 1
-        else:
-            false_count += 1
-        for key in ("must_match", "must_not_match"):
-            if key not in case:
-                continue
-            patterns = case[key]
-            if not isinstance(patterns, list) or not all(
-                isinstance(p, str) for p in patterns
-            ):
-                issues.append((line, f"第 {index + 1} 条 router case 的 {key} 必须是字符串列表"))
-                continue
-            for pattern in patterns:
-                try:
-                    re.compile(pattern, re.UNICODE)
-                except re.error as exc:
-                    issues.append((line, f"正则无法编译 {pattern!r}: {exc}"))
-    if true_count < 3:
-        issues.append((1, f"should_activate: true 只有 {true_count} 条，至少 3 条"))
-    if false_count < 3:
-        issues.append((1, f"should_activate: false 只有 {false_count} 条，至少 3 条"))
-    return issues
-
 
 
 def gate_frontmatter(repo: Repo) -> list[Failure]:
@@ -1221,33 +1214,6 @@ def gate_glossary(repo: Repo) -> list[Failure]:
     return failures
 
 
-def gate_evals(repo: Repo) -> list[Failure]:
-    fix_cmd = "python3 scripts/check.py --only evals"
-    failures: list[Failure] = []
-    for rel, validator in (
-        ("evals/cases.yaml", validate_cases_data),
-        ("evals/router_cases.yaml", validate_router_data),
-    ):
-        data, text, error = read_yaml_file(repo.root / rel)
-        if error is not None:
-            failures.append(
-                Failure(
-                    f"{rel}:1 {error}",
-                    f"修复 YAML；然后运行 {fix_cmd}",
-                )
-            )
-            continue
-        lines = yaml_section_lines(text, "cases")
-        for line, message in validator(data, lines):
-            failures.append(
-                Failure(
-                    f"{rel}:{line} {message}",
-                    f"修正用例；然后运行 {fix_cmd}",
-                )
-            )
-    return failures
-
-
 def gate_corpus(repo: Repo) -> list[Failure]:
     fix_cmd = "python3 scripts/check.py --only corpus"
     failures: list[Failure] = []
@@ -1279,10 +1245,8 @@ GATES: tuple[tuple[str, str, object], ...] = (
     ("decisions", "docs/decisions 命名、编号、状态与章节", gate_decisions),
     ("version", "VERSION、CHANGELOG、SKILL metadata.version 一致", gate_version),
     ("glossary", "术语表覆盖规范术语且运行时无禁用词", gate_glossary),
-    ("evals", "evals/cases.yaml 与 router_cases.yaml 结构与正则", gate_evals),
     ("corpus", "Markdown 语料 >= 8 且必需文件存在", gate_corpus),
 )
-
 
 
 def gate_by_id(gate_id: str):

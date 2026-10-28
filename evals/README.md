@@ -1,32 +1,52 @@
-# 评测
+# 本机评测
 
-评测要回答的问题：输出到底是执行了方法，还是只长得像执行。结构门禁管形态，行为评测管行为，两者不互相替代。
+评测回答一个问题：输出到底是执行了方法，还是只长得像执行。结构门禁管形态，本目录管行为。
 
-## 两层
+## 隐私边界
 
-| 层 | 文件 | 何时 | 判什么 |
-|---|---|---|---|
-| 结构 | [cases.yaml](cases.yaml) 的 YAML 合法性；[router_cases.yaml](router_cases.yaml) 的字段与正负计数 | 每次提交，`make check` | 用例能否被解析、正则能否编译、每条是否含 `id` `input` `expect` `must_match` `must_not_match` `why`，可选的 `artifact_glob` 是否是相对 glob |
-| 行为 | [cases.yaml](cases.yaml) | 发布前，`make eval` | 对每个输入跑模型，输出是否命中全部 `must_match`、是否避开全部 `must_not_match` |
+`cases.yaml`、`router_cases.yaml`、`reference/` 与 `runs/` 含真实客户信息，已列入 `.gitignore`，只在本机维护。它们不进入版本库、CI 或发布包；AI 不自动运行 `make eval`，结果由人工逐条审查。
 
-[router_cases.yaml](router_cases.yaml) 是触发样本，不自动跑。它的结构由 `evals` gate 检查；真实触发判断是人工评审：抽样真实调用，看该激活时是否激活、不该激活时是否误触发。原因见 [verification.md](../docs/verification.md) 的"不自动化的部分"。
+## 本机目录
 
-## 如何新增用例
+| 路径 | 内容 | 运行方式 |
+|---|---|---|
+| `cases.yaml` | 行为用例；每条含背景、输入、期望与人工审查清单，也可写正则断言 | `make eval-plan` 校验；`make eval` 由人工运行 |
+| `router_cases.yaml` | 触发样本；正例覆盖显式点名，负例覆盖技术问答、调试、选型、推荐 | 不自动跑；人工抽样对照真实调用 |
+| `reference/<id>/` | 历史会话存档：原始 JSON、全文、正文、思维链、检索记录 | 只读参考；`cases.yaml` 的 `reference` 指向它 |
+| `runs/<时间>-<id>/` | 每次人工运行的原始输出、stderr、命令、prompt 与元数据 | `make eval` 自动写入；同名时间戳避免覆盖 |
 
-1. 先写一个具体输入，和它期望的可观测行为。`expect` 用规范术语，例如 `定位缺失 + 实例化`。
-2. 在 [cases.yaml](cases.yaml) 追加一条，六个必需字段齐全，`id` 顺延且唯一；文档型用例加 `artifact_glob`。
-3. `must_match` 至少一条。`must_not_match` 只在禁用短语不可能出现在合法警告里时使用；否则留空，改用正向证据。
+## 用例字段
+
+| 字段 | 必填 | 作用 |
+|---|---|---|
+| `id` | 是 | 唯一标识 |
+| `bg` | 否 | 背景，运行时放在「背景：」段 |
+| `input` | 是 | 用户请求，运行时放在「用户请求：」段 |
+| `expect` | 是 | 一句话说明期望，用规范术语 |
+| `review` | 条件 | 人工审查清单；没有 `must_match` 时至少一条 |
+| `reference` | 否 | 指向 `reference/<id>/` 的历史存档；键名到相对路径的映射 |
+| `must_match` | 否 | 自动断言，全部命中才算 PASS |
+| `must_not_match` | 否 | 自动断言，任一命中即 FAIL |
+| `artifact_glob` | 否 | 文档型用例的产物相对 glob |
+| `why` | 是 | 为什么需要这条用例 |
+
+同时没有 `must_match` 与 `must_not_match` 的用例按人工用例处理：运行后打印完整输出与 `review` 清单，不做 PASS/FAIL 判定。
+
+## 新增用例
+
+1. 先写一个具体输入，和它期望的可观测行为。`expect` 用规范术语。
+2. 在 `cases.yaml` 追加一条；本机文件不入库，不需要改 gate。
+3. 有稳定观察量就写 `must_match`；没有就写 `review` 清单，按人工用例运行。
 4. 跑 `python3 scripts/run_evals.py --plan`，确认 YAML 可解析、正则可编译。
-5. 跑 `python3 scripts/run_evals.py --run --only <新 id>`，在改提示词之前确认它失败。
-6. 改 `SKILL.md`，直到该用例通过；再跑全量 `make eval` 确认没有退步。
+5. 跑 `python3 scripts/run_evals.py --run --only <id>`，人工读输出；改提示词后重跑。
 
-第 5 步不能跳过。用例一写就通过，说明断言没抓住行为，要换观察量或换输入。
+用例一写就通过，说明断言没抓住行为：换观察量或换输入，不要改提示词迁就。
 
-触发样本按同样方式进 [router_cases.yaml](router_cases.yaml)：正例必须显式点名本方法，负例覆盖技术问答、调试、选型、推荐四类。负例少于两类时，触发评测就测不出"因为问题开放而误触发"。
+触发样本按同样方式进 `router_cases.yaml`：正例必须显式点名本方法，负例覆盖技术问答、调试、选型、推荐四类。负例少于两类时，触发评测就测不出「因为问题开放而误触发」。
 
 ## 断言风格
 
-只写能从输出文本直接 grep 的观察量。
+自动断言只写能从输出文本直接 grep 的观察量。
 
 | 可以写 | 例子 |
 |---|---|
@@ -36,47 +56,67 @@
 | 结构性禁项 | 台账表头 `\|\s*#\s*\|\s*缺口`；并列模板 `路径一\|路径二` |
 | 必现的结构成分 | `(可逆|参照类|base rate|基准)` |
 
-不要写：
+不要写主观判断、长句整抄或只出现一次的词。正则一律单引号包裹，反斜杠按字面保留。`must_match` 全部命中才算 PASS；`must_not_match` 任一命中即 FAIL。
 
-- 主观判断："回答应有洞察力""分析要专业"。
-- 长句整抄：会把提示词锁死在某一版措辞上，正常改写就误报。
-- 只出现一次的词：模型换个同义词就漏，断言应该覆盖同义集合。
+负向断言容易假阳性：正确输出常写「不要直接辞职」「不能只说各有优劣」，这些句子包含禁用短语。因此负向断言优先选结构特征（表头、编号模板），不要选会被合法警告引用的措辞。
 
-正则一律单引号包裹，反斜杠按字面保留。`must_match` 全部命中才算 PASS；`must_not_match` 任一命中即 FAIL。一条用例 2-3 条 `must_match` 足够，条目越多越容易测到措辞而不是行为。
+## 人工审查
 
-负向断言容易假阳性：正确输出常写"不要直接辞职"、"不能只说各有优劣"，这些句子包含禁用短语。因此负向断言优先选结构特征（表头、编号模板），不要选会被合法警告引用的措辞。
+人工用例没有稳定观察量，或观察量需要结合语境判断。运行后按 `review` 清单逐条勾选，不把「输出很长」当成执行证据。
+
+| 看什么 | 判据 |
+|---|---|
+| 入口状态 | 是否从「未判」开始，类型是否是探针的输出 |
+| 关系式与比率 | 是否先写量的关系、算比率，再用绝对量下结论 |
+| 反证观测 | 是否写出能被观测推翻的句子 |
+| 下一步 | 是否只有一个动作，含执行者、耗时、花费上限、失败信号 |
+| 执行记录 | 是否列出检索来源、层级与未验证项 |
+
+## 历史输出与思维链
+
+历史会话按最高还原度保存在 `reference/<id>/`：
+
+| 文件 | 内容 |
+|---|---|
+| `session.json` | 原始 session、message、part 的 JSON 导出 |
+| `transcript.md` | 时间排序的全文：用户输入、助手正文、思维链、工具调用与结果 |
+| `output.md` | 助手正文 `text` part |
+| `thinking.md` | 助手 `reasoning` part |
+| `search-log.md` | `websearch_web_search_exa` 与 `webfetch` 的输入和完整输出 |
+
+`cases.yaml` 的 `reference` 字段指向这些文件。`make eval` 会加 `--thinking`，并自动把本次运行的原始输出、stderr、命令、prompt 与元数据写入 `runs/<时间>-<id>/`；直接调用 `run_evals.py --run` 时加 `--capture` 才会写入。两者都在 `.gitignore` 内，只在本机比对。
 
 ## 文档型用例
 
-在用例里加 `artifact_glob: 'open-problem-*.md'`，评测会先在临时目录里找匹配文件：找不到直接 FAIL，断言改为对文件内容执行；找不到时不会回退到 stdout。没有 `artifact_glob` 的用例仍断言 stdout。case-08 用这一层检查过程文档的 7 个二级标题。
+在用例里加 `artifact_glob: 'open-problem-*.md'`，评测会先在临时目录里找匹配文件：找不到直接 FAIL，断言改为对文件内容执行；找不到时不会回退到 stdout。没有 `artifact_glob` 的用例仍断言 stdout。
 
 ## 成本与凭据
 
 | 命令 | 调模型 | 成本 | 用途 |
 |---|---|---|---|
 | `make eval-plan` | 否 | 零 | 校验 YAML，打印将要执行的命令 |
-| `make eval` | 是 | 每条用例一次调用 | 发布前行为门禁 |
-| `python3 scripts/run_evals.py --run --only <id>` | 是 | 一次调用 | 单条调试 |
+| `make eval` | 是 | 每条用例一次调用 | 发布前人工评测；自动写入 `runs/` |
+| `python3 scripts/run_evals.py --run --only <id> --capture` | 是 | 一次调用 | 单条调试并保留原始输出 |
 
 `make eval` 需要 opencode CLI 与模型额度。未安装 `opencode` 时 `run_evals.py` 以退出码 2 结束并给出安装提示。默认不写死模型：不传 `--model` 时不加 `-m`，由环境决定；发布评测应固定模型，避免跨版本比较时混入模型差异。
 
-`make eval` 不进默认 CI：CI 没有模型凭据，也不该为每次提交付费。行为评测是发布前本地门禁，见 [releasing.md](../docs/releasing.md)。
+`make eval` 不进默认 CI：CI 没有模型凭据，也不该为每次提交付费。用例本身也不在 CI 的检出范围里，见 [verification.md](../docs/verification.md)。
 
 ## 失败诊断
 
-先拿完整输出，再看断言。
+先拿完整输出，再看清单或断言。
 
 ```sh
-python3 scripts/run_evals.py --run --only case-03
-python3 scripts/run_evals.py --run --only case-03 --json
+python3 scripts/run_evals.py --run --only case-01
+python3 scripts/run_evals.py --run --only case-01 --json
 ```
 
 | 现象 | 可能原因 | 动作 |
 |---|---|---|
-| `must_match` 未命中 | 输出没有该观察量：提示词没要求，或用例过严 | 读原始输出；确属退步改 `SKILL.md`，只是措辞差异改用例 |
-| `must_not_match` 命中 | 输出出现典型错解，或警告句里引用了禁用短语 | 先看命中位置：若是"不要……"式警告，改用例；若是真推荐，改 `SKILL.md` 的硬性禁止或门禁 |
+| 人工清单多数不满足 | 输出没有执行方法，或提示词没要求 | 读原始输出；确属退步改 `SKILL.md` |
+| `must_match` 未命中 | 输出没有该观察量：提示词没要求，或用例过严 | 读原始输出；只是措辞差异改用例 |
+| `must_not_match` 命中 | 输出出现典型错解，或警告句里引用了禁用短语 | 先看命中位置：若是「不要……」式警告，改用例；若是真推荐，改 `SKILL.md` |
 | 同一用例偶发失败 | 模型波动 | 连跑 3 次；≥2 次失败才算退步 |
 | 全部用例同时失败 | 环境问题：模型不可用、CLI 版本、临时目录拷贝不完整 | 先 `--plan`，再单跑一条；检查临时目录里是否有 `SKILL.md` 与 `references/` |
-| 新用例通过但旧用例退步 | 提示词改动引入回归 | 回滚，按 [authoring.md](../docs/authoring.md) 的失败处理重来 |
 
-修改断言前先问一句：这次失败是模型没执行方法，还是断言写得太窄。前者改提示词，后者改用例。两种情况都改，会同时丢失信号和基准。
+修改清单或断言前先问一句：这次失败是模型没执行方法，还是判据写得太窄。前者改提示词，后者改用例。两种情况都改，会同时丢失信号和基准。
