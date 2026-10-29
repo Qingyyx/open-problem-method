@@ -23,7 +23,7 @@
 克隆到 agent 的 skills 目录：
 
 ```sh
-git clone https://github.com/Qingyyx/open-preblem-method.git \
+git clone https://github.com/Qingyyx/open-problem-method.git \
   ~/.agents/skills/open-problem-method
 ```
 
